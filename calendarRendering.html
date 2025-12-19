@@ -124,9 +124,11 @@
         </div>
       </div>
     </div>
+
   </div>
 
   <script src="/assets/js/vue.global.js"></script>
+  <script src="/assets/js/sweetalert2@11.js"></script>
   <script src="/assets/js/html-to-image.js"></script>
   <script>
     const { createApp, ref, reactive, computed, onMounted, watch } = Vue;
@@ -358,7 +360,11 @@
         // 新增時段
         const addTimeSlot = () => {
           if (cData.selectedDate.isOffday) {
-            alert('休息日無法新增時段！');
+            Swal.fire({
+              icon: 'warning',
+              title: '休息日',
+              text: '休息日無法新增時段'
+            })
             return;
           };
 
@@ -370,7 +376,11 @@
           );
 
           if (exists) {
-            alert('此時段已存在，請選擇其他時間。');
+            Swal.fire({
+              icon: 'info',
+              title: '時段重複',
+              text: '此時段已存在，請選擇其他時間'
+            })
             return;
           }
 
@@ -417,13 +427,23 @@
 
         const temporaryStorage = () => {
           localStorage.setItem('calendarData', JSON.stringify(cData.weeks));
+          Swal.fire({
+            icon: 'success',
+            title: '已暫存',
+            text: '行事曆資料已儲存至本機',
+            timer: 1200,
+          })
         };
 
         const downloadPng = () => {
           const node = contentToCapture.value;
 
           if (!node) {
-            alert('找不到要擷取的內容！');
+            Swal.fire({
+              icon: 'error',
+              title: '匯出失敗',
+              text: '找不到要擷取的內容'
+            })
             return;
           }
 
@@ -445,22 +465,27 @@
 
           localStorage.removeItem('calendarData');
 
-          const shouldRegenerate = confirm('確定要清除暫存資料嗎？清除後將重新載入當前月份的預設日曆。');
+          Swal.fire({
+            title: '確定要清除暫存？',
+            text: '清除後將重新載入當前月份的預設日曆',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: '確定清除',
+            cancelButtonText: '取消'
+          }).then(async (result) => {
+            if (!result.isConfirmed) return
 
-          if (shouldRegenerate) {
-            fetchTaiwanHolidays(cData.year).then(holidays => {
-              cData.weeks = generateCorrespondingDate(
-                Number(cData.year),
-                Number(cData.month),
-                holidays,
-                cData.offdays
-              );
-            }).catch(error => {
-              console.error('清除後重置日曆失敗:', error);
-            });
-          } else {
-            console.log('已取消清除操作。');
-          }
+            localStorage.removeItem('calendarData')
+
+            const holidays = await fetchTaiwanHolidays(cData.year)
+            cData.weeks = generateCorrespondingDate(
+              Number(cData.year),
+              Number(cData.month),
+              holidays,
+              cData.offdays
+            )
+          })
+
         };
 
         const restoreStorage = () => {

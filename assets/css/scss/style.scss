@@ -1,11 +1,16 @@
 :root {
-  --brown: #622b10;
-  --pink: #e35d6a;
-  --blue: #0d6efd;
-  --lightBlue: #9EABF2;
-  --green: #28a745;
-}
+  --color-primary: #622b10;
+  --color-secondary: #e35d6a;
+  --color-accent: #0d6efd;
+  --color-highlight: #9EABF2;
+  --color-success: #28a745;
 
+  --brown: var(--color-primary);
+  --pink: var(--color-secondary);
+  --blue: var(--color-accent);
+  --lightBlue: var(--color-highlight);
+  --green: var(--color-success);
+}
 
 @font-face {
   font-family: 'Noto Sans TC';
