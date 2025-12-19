@@ -136,7 +136,7 @@
     createApp({
       setup() {
         const currentYear = new Date().getFullYear()
-        const currentMonth = new Date().getMonth() + 1
+        const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0')
 
         const cData = reactive({
           year: '' || currentYear,
@@ -425,15 +425,9 @@
 
         const contentToCapture = ref(null);
 
-        const temporaryStorage = () => {
-          localStorage.setItem('calendarData', JSON.stringify(cData.weeks));
-          Swal.fire({
-            icon: 'success',
-            title: '已暫存',
-            text: '行事曆資料已儲存至本機',
-            timer: 1200,
-          })
-        };
+        function getStorageKey(year, month) {
+          return `calendar-${year}-${month}`
+        }
 
         const downloadPng = () => {
           const node = contentToCapture.value;
@@ -461,9 +455,20 @@
             });
         };
 
-        const clearStorage = () => {
+        const temporaryStorage = () => {
+          const key = getStorageKey(cData.year, cData.month)
 
-          localStorage.removeItem('calendarData');
+          localStorage.setItem(key, JSON.stringify(cData.weeks))
+          Swal.fire({
+            icon: 'success',
+            title: '已暫存',
+            text: '行事曆資料已儲存至本機',
+            timer: 1200,
+          })
+        }
+
+        const clearStorage = () => {
+          const key = getStorageKey(cData.year, cData.month)
 
           Swal.fire({
             title: '確定要清除暫存？',
@@ -475,64 +480,62 @@
           }).then(async (result) => {
             if (!result.isConfirmed) return
 
-            localStorage.removeItem('calendarData')
-
-            const holidays = await fetchTaiwanHolidays(cData.year)
-            cData.weeks = generateCorrespondingDate(
-              Number(cData.year),
-              Number(cData.month),
-              holidays,
-              cData.offdays
-            )
+            localStorage.removeItem(key)
+            await loadMonth(cData.year, cData.month)
           })
+        }
 
-        };
+        const loadMonth = async (year, month) => {
+          const key = getStorageKey(year, month)
+          const cached = localStorage.getItem(key)
+
+          if (cached) {
+            cData.weeks = JSON.parse(cached)
+            return
+          }
+
+          const holidays = cData.holidays.length
+            ? cData.holidays
+            : await fetchTaiwanHolidays(year)
+
+          cData.weeks = generateCorrespondingDate(
+            Number(year),
+            Number(month),
+            holidays,
+            cData.offdays
+          )
+        }
 
         const restoreStorage = () => {
-          const savedData = localStorage.getItem('calendarData');
+          const savedData = localStorage.getItem('calendarData')
+          if (!savedData) return false
 
-          if (savedData) {
-            try {
-              const restoredWeeks = JSON.parse(savedData);
-              cData.weeks = restoredWeeks;
+          try {
+            const parsed = JSON.parse(savedData)
 
-              return true;
-            } catch (e) {
-              localStorage.removeItem('calendarData');
-              return false;
-            }
+            cData.year = parsed.year ?? currentYear
+            cData.month = parsed.month ?? currentMonth
+            cData.weeks = parsed.weeks ?? parsed
+            cData.holidays = parsed.holidays ?? []
+            cData.offdays = parsed.offdays ?? []
+
+            return true
+          } catch (e) {
+            localStorage.removeItem('calendarData')
+            return false
           }
-          return false;
-        };
+        }
 
         onMounted(async () => {
-          const restored = restoreStorage();
-
-          if (!restored) {
-            const holidays = await fetchTaiwanHolidays(cData.year);
-
-            cData.holidays = holidays;
-            cData.weeks = generateCorrespondingDate(
-              Number(cData.year),
-              Number(cData.month),
-              holidays,
-              cData.offdays
-            );
-
-            console.log('cData.weeks', cData.weeks);
-          }
-        });
+          cData.holidays = await fetchTaiwanHolidays(cData.year)
+          await loadMonth(cData.year, cData.month)
+        })
 
         // 換月時重新產生日期資料
         watch(
           () => cData.month,
-          (month) => {
-            cData.weeks = generateCorrespondingDate(
-              Number(cData.year),
-              Number(month),
-              cData.holidays,
-              cData.offdays
-            )
+          async (month) => {
+            await loadMonth(cData.year, month)
           }
         )
 
@@ -540,16 +543,10 @@
         watch(
           () => cData.year,
           async (year) => {
-            cData.holidays = await fetchTaiwanHolidays(year);
-
-            cData.weeks = generateCorrespondingDate(
-              Number(year),
-              Number(cData.month),
-              cData.holidays,
-              cData.offdays
-            );
+            cData.holidays = await fetchTaiwanHolidays(year)
+            await loadMonth(year, cData.month)
           }
-        );
+        )
 
         return {
           currentYear,
