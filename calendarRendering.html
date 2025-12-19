@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+  <link rel="stylesheet" href="/assets/css/style.min.css">
+</head>
+
+<body>
+
+  <div id="app">
+    <div class="container">
+      <div class="content_wrap">
+        <div class="select_date">
+          <div class="cus_select">
+            <select v-model="cData.year">
+              <option :value="currentYear">{{ currentYear }}</option>
+              <option :value="currentYear + 1">{{ currentYear + 1 }}</option>
+            </select>
+          </div>
+          <div class="cus_select">
+            <select v-model="cData.month">
+              <option v-for="m in 12" :key="m" :value="String(m).padStart(2, '0')">{{ String(m).padStart(2, '0') }}
+              </option>
+            </select>
+          </div>
+          <div class="switch" @click="isChinese = !isChinese">
+            改成{{ isChinese ? '英' : '中' }}文
+          </div>
+        </div>
+
+        <div id="calendar" ref="contentToCapture">
+          <div class="week">
+            <div v-for="(day, index) in weekDayLabels" :key="index" class="cell">
+              {{ day }}
+            </div>
+          </div>
+          <div class="days" v-for="(week, wIndex) in cData.weeks" :key="wIndex">
+            <div v-for="(item, dIndex) in week" :key="dIndex" class="cell" :class="{ 
+              disabled: !item.isCurrentMonth,
+              isPast: item.isPast,
+              isHoliday: item.isHoliday,
+              isOffday: item.isOffday
+            }" @click="showTimeSlot(item)">
+              <div class="day_label">{{ item.day }}</div>
+              <div class="time_slot">
+                <template v-for="(slot, tIndex) in item.timeSlots" :key="tIndex">
+                  <span v-if="slot.available" :class="{ booked: slot.isBooked }">{{ slot.time }}</span>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="btn_wrap">
+          <button type="button" @click="clearStorage">清除暫存</button>
+          <button type="button" @click="temporaryStorage">暫存行事曆</button>
+          <button class="export_to_png" type="button" @click="downloadPng">匯出圖片</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 時段燈箱 -->
+    <div v-if="showTimeSlotBox" class="light_box time_slot_box">
+      <div class="drop_back" @click="hideTimeSlot"></div>
+      <div class="inner">
+        <div class="title">
+          <div class="icon"></div>
+          {{ cData.selectedDate.date }}
+          <div class="set_as_offday" :class="{ active: cData.selectedDate.isOffday }"
+            @click="setAsOffday(cData.selectedDate)">休
+          </div>
+          <div class="set_as_holiday" :class="{ active: cData.selectedDate.isHoliday }"
+            @click="setAsHoliday(cData.selectedDate)">假
+          </div>
+          <div class="add_time_slot" @click="showTimeSlotPicker">＋</div>
+          <div class="close_btn" @click="hideTimeSlot"></div>
+        </div>
+        <div class="content">
+          <div class="content_inner">
+            <div class="time_slot" v-for="(slot, index) in cData.selectedDate.timeSlots" :key="index">
+              <div v-if="slot.available" class="time_slot_inner" :class="{ 
+                  booked: slot.isBooked, 
+                  disabled: cData.selectedDate.isOffday 
+                }" @click="!cData.selectedDate.isOffday && bookThisTimeSlot(slot)">
+                {{slot.time}}
+              </div>
+              <div class="delete" @click="deleteTimeSlot(index)"></div>
+            </div>
+          </div>
+        </div>
+        <div class="bottom">
+          <button type="button" @click="saveChanges">儲存修改</button>
+        </div>
+      </div>
+    </div>
+
+    <!--選擇時段燈箱 -->
+    <div v-if="timeSlotPicker" class="light_box time_slot_picker">
+      <div class="drop_back" @click="hideTimeSlotPicker"></div>
+      <div class="inner">
+        <div class="title">
+          <div class="icon"></div>
+          新增 {{ cData.selectedDate.date }} 時段
+          <div class="close_btn" @click="hideTimeSlotPicker"></div>
+        </div>
+        <div class="content">
+          <div class="content_inner">
+            <div class="cus_select">
+              <select v-model="cData.newTimeHour">
+                <option v-for="h in hourOptions" :key="h" :value="h">{{ h }}</option>
+              </select>
+            </div>
+            <div class="cus_select">
+              <select v-model="cData.newTimeMinute">
+                <option v-for="m in minuteOptions" :key="m" :value="m">{{ m }}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="bottom">
+          <button type="button" @click="addTimeSlot">新增時段</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/assets/js/vue.global.js"></script>
+  <script src="/assets/js/html-to-image.js"></script>
+  <script>
+    const { createApp, ref, reactive, computed, onMounted, watch } = Vue;
+
+    createApp({
+      setup() {
+        const currentYear = new Date().getFullYear()
+        const currentMonth = new Date().getMonth() + 1
+
+        const cData = reactive({
+          year: '' || currentYear,
+          month: '' || currentMonth,
+          weeks: [],
+          holidays: [],
+          selectedDate: {},
+          offdays: [],
+          newTimeHour: '00',
+          newTimeMinute: '00',
+        });
+
+        // 轉換API回傳資料格式
+        function normalizeHolidays(rawData) {
+          if (!Array.isArray(rawData)) return [];
+
+          return rawData
+            .filter(item => item.isHoliday === true && item.description.trim() !== '')
+            .map(item => {
+              const dateStr = `${item.date.substring(0, 4)}-${item.date.substring(4, 6)}-${item.date.substring(6, 8)}`;
+
+              return {
+                date: dateStr,
+                name: item.description,
+              };
+            });
+        }
+
+        // 拿取該年分國定假日列表
+        // https://github.com/ruyut/TaiwanCalendar/tree/master?tab=readme-ov-file
+        // 原始資料使用政府資料開放授權條款-第1版(https://data.gov.tw/license)授權，依照第三條第二項要求標示出處為政府資料開放平台(https://data.gov.tw/)，且依第四條第二項說明使用「創用CC授權 姓名標示 4.0 國際版本」授權釋出。
+        async function fetchTaiwanHolidays(year) {
+          const url = `https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/${year}.json`;
+
+          try {
+            const response = await fetch(url);
+
+            if (!response.ok) {
+              throw new Error(`HTTP 錯誤! 狀態: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return normalizeHolidays(data);
+
+          } catch (error) {
+            return [];
+          }
+        }
+
+        const isChinese = ref(false)
+        const weekDayLabels = computed(() => {
+          return isChinese.value
+            ? ['日', '一', '二', '三', '四', '五', '六']
+            : ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+        })
+
+        const normalDayTimeSlots = [
+          { time: "18:00", available: true, isBooked: false },
+          { time: "20:30", available: true, isBooked: false }
+        ]
+
+        const holidayTimeSlots = [
+          { time: "11:00", available: true, isBooked: false },
+          { time: "14:00", available: true, isBooked: false },
+          { time: "17:00", available: true, isBooked: false },
+          { time: "20:00", available: true, isBooked: false }
+        ]
+
+        // 產生日期資料
+        function generateCorrespondingDate(year, month, holidays = [], offdays = []) {
+          const days = []
+          const now = new Date()
+          const nowYear = now.getFullYear()
+          const nowMonth = now.getMonth() + 1
+          const todayDate = now.getDate()
+          const firstDay = new Date(year, month - 1, 1)
+          const lastDate = new Date(year, month, 0).getDate()
+
+          let startWeekDay = firstDay.getDay()
+
+          // 補齊上個月的空白
+          for (let i = 0; i < startWeekDay; i++) {
+            days.push({
+              day: '',
+              date: '',
+              isCurrentMonth: false,
+              isWeekend: false,
+              isPast: false,
+              isHoliday: false,
+              holidayName: '',
+              isOffday: false,
+              timeSlots: []
+            })
+          }
+
+          // 選擇的日期
+          for (let d = 1; d <= lastDate; d++) {
+            const date = new Date(year, month - 1, d)
+            const weekDay = date.getDay() // 0 = Sunday, 6 = Saturday
+            const isWeekend = weekDay === 0 || weekDay === 6
+            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+            const holiday = holidays.find(h => h.date === dateStr)
+            const isHoliday = !!holiday
+            const holidayName = holiday ? holiday.name : ''
+            const isOffday = offdays.includes(dateStr)
+
+            const isCurrentRealMonth = Number(year) === nowYear && Number(month) === nowMonth
+            const isPast = isCurrentRealMonth
+              ? d < todayDate
+              : false
+
+            let timeSlots = [];
+
+            // 判斷假日或平日時段
+            if (isHoliday || isWeekend) {
+              timeSlots = JSON.parse(JSON.stringify(holidayTimeSlots))
+            } else {
+              timeSlots = JSON.parse(JSON.stringify(normalDayTimeSlots))
+            }
+
+            if (isOffday) {
+              timeSlots = [];
+            }
+
+            days.push({
+              day: d,
+              date: dateStr,
+              isCurrentMonth: true,
+              isWeekend,
+              isPast,
+              isHoliday,
+              holidayName,
+              isOffday,
+              timeSlots
+            })
+          }
+
+          // 補齊下個月的空白
+          while (days.length % 7 !== 0) {
+            days.push({
+              day: '',
+              date: '',
+              isCurrentMonth: false,
+              isWeekend: false,
+              isPast: false,
+              isHoliday: false,
+              holidayName: '',
+              isOffday: false,
+              timeSlots: []
+            })
+          }
+
+          // 切成每週 7 天
+          const weeks = []
+          for (let i = 0; i < days.length; i += 7) {
+            weeks.push(days.slice(i, i + 7))
+          }
+
+          return weeks
+        }
+
+        const showTimeSlotBox = ref(false);
+        const showTimeSlot = (item) => {
+          if (!item.isCurrentMonth || item.isPast) return;
+
+          cData.selectedDate = JSON.parse(JSON.stringify(item));
+          showTimeSlotBox.value = true;
+        }
+        const hideTimeSlot = () => {
+          cData.selectedDate = {};
+          showTimeSlotBox.value = false;
+        }
+        const bookThisTimeSlot = (slot) => {
+          slot.isBooked = !slot.isBooked;
+        }
+        // 重建時段資料
+        const rebuildTimeSlots = (day) => {
+          if (day.isHoliday || day.isWeekend) {
+            day.timeSlots = JSON.parse(JSON.stringify(holidayTimeSlots))
+          } else {
+            day.timeSlots = JSON.parse(JSON.stringify(normalDayTimeSlots))
+          }
+        }
+        // 設定為休息日
+        const setAsOffday = (slot) => {
+          slot.isOffday = !slot.isOffday
+
+          if (slot.isOffday) {
+            slot.isHoliday = false
+          }
+        }
+        // 設定為假日
+        const setAsHoliday = (slot) => {
+          slot.isHoliday = !slot.isHoliday
+
+          if (slot.isHoliday) {
+            slot.isOffday = false
+          }
+
+          rebuildTimeSlots(slot)
+        }
+
+        const timeSlotPicker = ref(false);
+        const showTimeSlotPicker = () => {
+          timeSlotPicker.value = true
+        }
+        const hideTimeSlotPicker = () => {
+          timeSlotPicker.value = false
+        }
+        const getHourOptions = () => {
+          return Array.from({ length: 24 }, (_, i) =>
+            String(i).padStart(2, '0')
+          )
+        }
+        const getMinuteOptions = () => {
+          return ['00', '15', '30', '45']
+        }
+        const hourOptions = getHourOptions()
+        const minuteOptions = getMinuteOptions()
+
+        // 新增時段
+        const addTimeSlot = () => {
+          if (cData.selectedDate.isOffday) {
+            alert('休息日無法新增時段！');
+            return;
+          };
+
+          const newTime = `${cData.newTimeHour}:${cData.newTimeMinute}`;
+
+          // 檢查是否已存在相同時間
+          const exists = cData.selectedDate.timeSlots.some(
+            slot => slot.time === newTime
+          );
+
+          if (exists) {
+            alert('此時段已存在，請選擇其他時間。');
+            return;
+          }
+
+          cData.selectedDate.timeSlots.push({
+            time: newTime,
+            available: true,
+            isBooked: false
+          });
+
+          cData.selectedDate.timeSlots.sort((a, b) =>
+            a.time.localeCompare(b.time)
+          )
+
+          // 重置選擇器
+          cData.newTimeHour = '00';
+          cData.newTimeMinute = '00';
+
+          hideTimeSlotPicker();
+        };
+        // 刪除時段
+        const deleteTimeSlot = (index) => {
+          if (!Array.isArray(cData.selectedDate.timeSlots)) return
+          cData.selectedDate.timeSlots.splice(index, 1)
+        }
+
+        // 儲存修改狀態
+        const saveChanges = () => {
+          const selectedDateStr = cData.selectedDate.date;
+          if (!selectedDateStr) return;
+
+          const dateItem = cData.weeks.flat().find(d => d.date === selectedDateStr);
+          if (!dateItem) return;
+
+          dateItem.timeSlots = JSON.parse(
+            JSON.stringify(cData.selectedDate.timeSlots)
+          );
+          dateItem.isOffday = cData.selectedDate.isOffday;
+          dateItem.isHoliday = cData.selectedDate.isHoliday;
+
+          showTimeSlotBox.value = false;
+        }
+
+        const contentToCapture = ref(null);
+
+        const temporaryStorage = () => {
+          localStorage.setItem('calendarData', JSON.stringify(cData.weeks));
+        };
+
+        const downloadPng = () => {
+          const node = contentToCapture.value;
+
+          if (!node) {
+            alert('找不到要擷取的內容！');
+            return;
+          }
+
+          htmlToImage.toPng(node)
+            .then((dataUrl) => {
+              const link = document.createElement('a');
+              link.download = 'report-card.png';
+              link.href = dataUrl;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            })
+            .catch((error) => {
+              console.error('Oops, 轉換失敗:', error);
+            });
+        };
+
+        const clearStorage = () => {
+
+          localStorage.removeItem('calendarData');
+
+          const shouldRegenerate = confirm('確定要清除暫存資料嗎？清除後將重新載入當前月份的預設日曆。');
+
+          if (shouldRegenerate) {
+            fetchTaiwanHolidays(cData.year).then(holidays => {
+              cData.weeks = generateCorrespondingDate(
+                Number(cData.year),
+                Number(cData.month),
+                holidays,
+                cData.offdays
+              );
+            }).catch(error => {
+              console.error('清除後重置日曆失敗:', error);
+            });
+          } else {
+            console.log('已取消清除操作。');
+          }
+        };
+
+        const restoreStorage = () => {
+          const savedData = localStorage.getItem('calendarData');
+
+          if (savedData) {
+            try {
+              const restoredWeeks = JSON.parse(savedData);
+              cData.weeks = restoredWeeks;
+
+              return true;
+            } catch (e) {
+              localStorage.removeItem('calendarData');
+              return false;
+            }
+          }
+          return false;
+        };
+
+        onMounted(async () => {
+          const restored = restoreStorage();
+
+          if (!restored) {
+            const holidays = await fetchTaiwanHolidays(cData.year);
+
+            cData.holidays = holidays;
+            cData.weeks = generateCorrespondingDate(
+              Number(cData.year),
+              Number(cData.month),
+              holidays,
+              cData.offdays
+            );
+
+            console.log('cData.weeks', cData.weeks);
+          }
+        });
+
+        // 換月時重新產生日期資料
+        watch(
+          () => cData.month,
+          (month) => {
+            cData.weeks = generateCorrespondingDate(
+              Number(cData.year),
+              Number(month),
+              cData.holidays,
+              cData.offdays
+            )
+          }
+        )
+
+        // 換年時重新抓假日資料
+        watch(
+          () => cData.year,
+          async (year) => {
+            cData.holidays = await fetchTaiwanHolidays(year);
+
+            cData.weeks = generateCorrespondingDate(
+              Number(year),
+              Number(cData.month),
+              cData.holidays,
+              cData.offdays
+            );
+          }
+        );
+
+        return {
+          currentYear,
+          cData,
+          isChinese,
+          weekDayLabels,
+          showTimeSlotBox,
+          showTimeSlot,
+          hideTimeSlot,
+          bookThisTimeSlot,
+          setAsOffday,
+          setAsHoliday,
+          saveChanges,
+          contentToCapture,
+          downloadPng,
+          temporaryStorage,
+          clearStorage,
+          timeSlotPicker,
+          showTimeSlotPicker,
+          hideTimeSlotPicker,
+          hourOptions,
+          minuteOptions,
+          addTimeSlot,
+          deleteTimeSlot
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+
+</html>

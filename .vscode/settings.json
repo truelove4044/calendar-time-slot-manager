@@ -1,0 +1,15 @@
+{
+  "liveSassCompile.settings.formats": [
+    {
+      "format": "compressed",
+      "extensionName": ".min.css",
+      "savePath": "~/../"
+    }
+  ],
+  "liveSassCompile.settings.showOutputWindowOn": "Error",
+  "diffEditor.wordWrap": "on",
+  "editor.wordWrapColumn": 200,
+  "editor.wordWrap": "on",
+  "debug.console.wordWrap": false,
+  "liveServer.settings.port": 5501
+}
