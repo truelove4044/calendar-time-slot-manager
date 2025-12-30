@@ -20,6 +20,8 @@
   font-display: swap;
 }
 
+@import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic&display=swap');
+
 @mixin mediaMax($max) {
   @media (max-width: #{$max}px) {
     @content;
@@ -86,7 +88,7 @@ body {
 
     .content_wrap {
       width: 100%;
-      max-width: 800px;
+      max-width: 830px;
     }
 
     .select_date {
@@ -110,7 +112,7 @@ body {
 
     #calendar {
       width: 100%;
-      border: 1px var(--brown) solid;
+      border: 2px var(--brown) solid;
       color: var(--brown);
 
       .week,
@@ -127,23 +129,25 @@ body {
           justify-content: center;
 
           &+.cell {
-            border-left: 1px var(--brown) solid;
+            border-left: 2px var(--brown) solid;
           }
         }
       }
 
       .week {
         .cell {
-          height: 36px;
-          border-bottom: 1px var(--brown) solid;
+          aspect-ratio: 1/0.4;
+          border-bottom: 2px var(--brown) solid;
           font-weight: bold;
+          font-size: 24px;
+          letter-spacing: 1px;
         }
       }
 
       .days {
         .cell {
           position: relative;
-          aspect-ratio: 1/1.1;
+          aspect-ratio: 1/1.2;
 
           @include mediaMax(576) {
             aspect-ratio: 1/1.3;
@@ -162,16 +166,17 @@ body {
             position: absolute;
             top: 5px;
             left: 5px;
-            font-size: 12px;
+            font-size: 18px;
             font-weight: 500;
           }
 
           .time_slot {
             display: flex;
             flex-direction: column;
-            font-size: 14px;
-            gap: 3px;
+            font-size: 20px;
+            gap: 8px;
             padding-top: 10px;
+            font-weight: 500;
 
             .booked {
               text-decoration: line-through;
@@ -199,31 +204,28 @@ body {
 
             &:before {
               content: '休';
+              font-family: "Zen Maru Gothic", sans-serif;
               display: flex;
-              width: 50px;
-              height: 50px;
+              width: 60px;
+              height: 60px;
+              line-height: 56px;
               background: var(--pink);
               border: 1px var(--pink) solid;
               border-radius: 50%;
-              align-items: center;
               justify-content: center;
-              color: #fff;
-              font-size: 24px;
-              font-weight: 500;
+              color: var(--brown);
+              font-size: 32px;
+              font-weight: 600;
             }
 
             .time_slot {
               display: none;
             }
-
-            .day_label {
-              color: #fff;
-            }
           }
         }
 
         &+.days {
-          border-top: 1px var(--brown) solid;
+          border-top: 2px var(--brown) solid;
         }
       }
     }
